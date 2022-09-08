@@ -8,13 +8,7 @@ const PORT = 5000;
 app.listen(PORT);
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
-app.use(
-    cors({
-        origin: "http://localhost:3000",
-        methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-        credentials: false
-    })
-)
+app.use(cors())
 
 const database = {
     users: [
@@ -28,10 +22,10 @@ const database = {
         },
         {
             id: '124',
-            name: 'sally',
+            name: 'Leeadi',
             email: 'a@a',
             password: 'a',
-            entries: 0,
+            entries: 5,
             joined: new Date()
         }
     ]
@@ -50,7 +44,7 @@ app.post('/signin', (req, res) => {
     console.log(req.body);
     if (req.body.email === database.users[1].email &&
         req.body.password === database.users[1].password) {
-        res.json('success');
+        res.json(database.users[1]);
     }
     else {
         res.status(400).json('Error logging in');
@@ -58,16 +52,31 @@ app.post('/signin', (req, res) => {
 });
 
 app.get('/register', (req, res) => {
+
 });
 
 
 app.post('/register', (req, res) => {
-    const { email, password, name } = req.body;
-    bcrypt.genSalt(10, function (err, salt) {
-        bcrypt.hash("B4c0/\/", salt, function (err, hash) {
-            console.log(hash);
-        });
-    });
+    /* const { name, email, password } = req.body;
+     console.log(req.body, name, email, password);
+     bcrypt.genSalt(10, function (err, salt) {
+         bcrypt.hash("B4c0/\/", salt, function (err, hash) {
+             console.log(hash);
+         });
+     });*/
+    let userFound = false;
+    database.users.forEach((user) => {
+        if (user.email === req.body.email) {
+            // email already exists, return
+            res.status(400).json('Error registering');
+            userFound = true;
+        }
+    })
+    if (!userFound) {
+        database.users.push(req.body);
+    }
+    /* display all users */
+    database.users.forEach(x => console.log(JSON.stringify(x)));
 });
 
 app.get('/profile/:id', (req, res) => {
