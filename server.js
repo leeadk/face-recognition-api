@@ -1,32 +1,25 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const knex = require('knex');
-
-const WSL_PROCESS_ENV = process.env.WINDOWS_HOST;
-const PSQL_USER_DB = 'users';
-const PSQL_LOGIN_DB = 'login';
-const PSQL_USR = 'postgres';
-const PSQL_DB = 'postgres';
-const PSQL_PORT = 5432;
-const APP_PORT = 5000;
-const BCRYPT_SALT_ROUNDS = 10;
-
-
+const cors = require('cors');
+const cfg = require('./config/config.js');
 const app = express();
-app.listen(APP_PORT);
 
-app.use(require('cors')())
+
+app.use(cors())
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+app.listen(cfg.APP.PORT);
+
 
 const postgres = knex({
-    client: 'pg',
+    client: cfg.DB.POSTGRES_CLIENT,
     connection: {
-        host: WSL_PROCESS_ENV,
-        port: PSQL_PORT,
-        user: PSQL_USR,
-        database: PSQL_DB,
+        host: cfg.DB.WSL_PROCESS_ENV,
+        port: cfg.DB.PSQL_PORT,
+        user: cfg.DB.PSQL_USR,
+        database: cfg.DB.PSQL_DB,
     }
 });
 
@@ -34,7 +27,6 @@ const postgres = knex({
 
 app.get('/', (req, res) => {
     res.send("hello");
-    res.send('goodbye');
 });
 
 app.get('/signin', (req, res) => {
@@ -43,16 +35,22 @@ app.get('/signin', (req, res) => {
 
 app.post('/signin', (req, res) => {
     const { email, password } = req.body;
-    postgres(PSQL_LOGIN_DB).where(({ email: email })).first().then(user => {
+    const lowercaseEmail = email.toLowerCase();
+    postgres(cfg.DB.PSQL_LOGIN_DB).where(({ email: lowercaseEmail })).first().then(user => {
+        if (!user) {
+            return res.status(400).send('Nothing to show');
+        }
         bcrypt.compare(password, user.hash, function (err, result) {
             if (err) {
-                res.status(400).json('Bcrypt err');
+                return res.status(400).send('Bcrypt err');
             }
-            if (result === true) {
-                res.status(200).json('Success');
+            else if (result === true) {
+                postgres(cfg.DB.PSQL_USER_DB).where(({ email: lowercaseEmail })).first().then(user => {
+                    return res.status(200).json(user);
+                })
             }
             else {
-                res.status(400).json('Failed to authenticate');
+                return res.status(401).send('Failed to authenticate');
             }
         });
     });
@@ -65,15 +63,15 @@ app.get('/register', (req, res) => {
 
 app.post('/register', (req, res) => {
     const { name, email, password } = req.body;
-    bcrypt.hash(password, BCRYPT_SALT_ROUNDS, function (err, hash) {
+    bcrypt.hash(password, cfg.BCRYPT.SALT_ROUNDS, function (err, hash) {
         if (err) {
             res.status(400).json('Bcrypt failed, no changes saved');
         }
-        postgres(PSQL_LOGIN_DB).insert({
+        postgres(cfg.DB.PSQL_LOGIN_DB).insert({
             hash: hash,
-            email: email
+            email: email.toLowerCase()
         }).then(() => {
-            postgres(PSQL_USER_DB).returning('*')
+            postgres(cfg.DB.PSQL_USER_DB)//.returning('*')
                 .insert({
                     name: name,
                     email: email,
@@ -88,6 +86,5 @@ app.post('/register', (req, res) => {
 });
 
 app.put('/image', (req, res) => {
-    const { id } = req.body;
-
+    const { id, img } = req.body;
 });
