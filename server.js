@@ -25,20 +25,19 @@ const postgres = knex({
 });
 
 
-app.get('/', (req, res) => {
-    postgres.select('name', 'entries').from(cfg.DB.PSQL_USER_DB).then(users => res.json(users));
-});
-
 app.post('/signin', (req, res) => {
     const { email, password } = req.body;
+    if (!email.trim().length || !password.trim().length) {
+        return res.status(401).json('Missing credentials');
+    }
     const lowercaseEmail = email.toLowerCase();
     postgres(cfg.DB.PSQL_LOGIN_DB).where(({ email: lowercaseEmail })).first().then(user => {
         if (!user) {
-            return res.status(400).json('Nothing to show');
+            return res.status(401).json('Unused email');
         }
         bcrypt.compare(password, user.hash, function (err, result) {
             if (err) {
-                return res.status(400).json('Bcrypt err');
+                return res.status(401).json('Wrong credentials');
             }
             else if (result === true) {
                 postgres(cfg.DB.PSQL_USER_DB).where(({ email: lowercaseEmail })).first().then(user => {
@@ -46,7 +45,7 @@ app.post('/signin', (req, res) => {
                 })
             }
             else {
-                return res.status(401).json('Failed to authenticate');
+                return res.status(401).json('Wrong credentials');
             }
         });
     });
@@ -54,45 +53,44 @@ app.post('/signin', (req, res) => {
 
 app.post('/register', (req, res) => {
     const { name, email, password } = req.body;
+    if (!name.trim().length || !email.trim().length || !password.trim().length) {
+        return res.status(401).json('Fill the entire form');
+    }
     bcrypt.hash(password, cfg.BCRYPT.SALT_ROUNDS, function (err, hash) {
         if (err) {
-            return res.status(400).json('Bcrypt failed, no changes saved');
+            return res.status(403).json('Bad request');
         }
         postgres(cfg.DB.PSQL_LOGIN_DB).insert({
             hash: hash,
             email: email.toLowerCase()
-        }).then(() => {
-            postgres(cfg.DB.PSQL_USER_DB)//.returning('*')
-                .insert({
-                    name: name,
-                    email: email,
-                    created_on: new Date()
-                }).then(user => {
-                    return res.json(JSON.stringify(user[0]));
-                })
-        }).catch(err => {
-            return res.status(400).json('Unable to register');
         })
+            .then(() => {
+                postgres(cfg.DB.PSQL_USER_DB)
+                    .insert({
+                        name: name,
+                        email: email,
+                        created_on: new Date()
+                    }).then(user => {
+                        return res.json(JSON.stringify(user[0]));
+                    })
+            }).catch(err => {
+                return res.status(401).json('Email in use');
+            })
     })
 });
 
 app.put('/image', async (req, res) => {
     const { id, img } = req.body;
     if (!img || !id) {
-        return res.status(400).json('unable to get user information');
+        return res.status(400).json('User information unavailable');
     }
     let imgBoxes = await faceRecognition(img);
-    console.log(imgBoxes);
     postgres(cfg.DB.PSQL_USER_DB).where('id', '=', id)
         .increment('entries', 1)
         .returning('entries')
         .then(entries => {
-            // If you are using knex.js version 1.0.0 or higher this now returns an array of objects. Therefore, the code goes from:
-            // entries[0] --> this used to return the entries
-            // TO
-            // entries[0].entries --> this now returns the entries
             return res.status(200).json(JSON.stringify({ imgBoxes: imgBoxes, entries: entries[0].entries }));
         })
-        .catch(err => res.status(400).json('unable to get entries for userid', id))
+        .catch(err => res.status(400).json('Internal error'))
 
 });
