@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const knex = require('knex');
 const cors = require('cors');
 const cfg = require('./config/config.js');
+const faceRecognition = require('./clarifai.js');
 const app = express();
 
 
@@ -24,13 +25,8 @@ const postgres = knex({
 });
 
 
-
 app.get('/', (req, res) => {
-    res.send("hello");
-});
-
-app.get('/signin', (req, res) => {
-
+    postgres.select('name', 'entries').from(cfg.DB.PSQL_USER_DB).then(users => res.json(users));
 });
 
 app.post('/signin', (req, res) => {
@@ -38,11 +34,11 @@ app.post('/signin', (req, res) => {
     const lowercaseEmail = email.toLowerCase();
     postgres(cfg.DB.PSQL_LOGIN_DB).where(({ email: lowercaseEmail })).first().then(user => {
         if (!user) {
-            return res.status(400).send('Nothing to show');
+            return res.status(400).json('Nothing to show');
         }
         bcrypt.compare(password, user.hash, function (err, result) {
             if (err) {
-                return res.status(400).send('Bcrypt err');
+                return res.status(400).json('Bcrypt err');
             }
             else if (result === true) {
                 postgres(cfg.DB.PSQL_USER_DB).where(({ email: lowercaseEmail })).first().then(user => {
@@ -50,22 +46,17 @@ app.post('/signin', (req, res) => {
                 })
             }
             else {
-                return res.status(401).send('Failed to authenticate');
+                return res.status(401).json('Failed to authenticate');
             }
         });
     });
 });
 
-app.get('/register', (req, res) => {
-
-});
-
-
 app.post('/register', (req, res) => {
     const { name, email, password } = req.body;
     bcrypt.hash(password, cfg.BCRYPT.SALT_ROUNDS, function (err, hash) {
         if (err) {
-            res.status(400).json('Bcrypt failed, no changes saved');
+            return res.status(400).json('Bcrypt failed, no changes saved');
         }
         postgres(cfg.DB.PSQL_LOGIN_DB).insert({
             hash: hash,
@@ -77,14 +68,31 @@ app.post('/register', (req, res) => {
                     email: email,
                     created_on: new Date()
                 }).then(user => {
-                    res.json(user[0]);
+                    return res.json(JSON.stringify(user[0]));
                 })
         }).catch(err => {
-            res.status(400).json('Unable to register');
+            return res.status(400).json('Unable to register');
         })
     })
 });
 
-app.put('/image', (req, res) => {
+app.put('/image', async (req, res) => {
     const { id, img } = req.body;
+    if (!img || !id) {
+        return res.status(400).json('unable to get user information');
+    }
+    let imgBoxes = await faceRecognition(img);
+    console.log(imgBoxes);
+    postgres(cfg.DB.PSQL_USER_DB).where('id', '=', id)
+        .increment('entries', 1)
+        .returning('entries')
+        .then(entries => {
+            // If you are using knex.js version 1.0.0 or higher this now returns an array of objects. Therefore, the code goes from:
+            // entries[0] --> this used to return the entries
+            // TO
+            // entries[0].entries --> this now returns the entries
+            return res.status(200).json(JSON.stringify({ imgBoxes: imgBoxes, entries: entries[0].entries }));
+        })
+        .catch(err => res.status(400).json('unable to get entries for userid', id))
+
 });
